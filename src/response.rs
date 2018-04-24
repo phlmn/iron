@@ -12,8 +12,7 @@ use hyper::header::Headers;
 use status::{self, Status};
 use {Plugin, headers};
 
-pub use hyper::server::response::Response as HttpResponse;
-use hyper::net::Fresh;
+pub use hyper::server::Response as HttpResponse;
 
 /// Wrapper type to set `Read`ers as response bodies
 pub struct BodyReader<R: Send>(pub R);

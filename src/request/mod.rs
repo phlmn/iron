@@ -4,17 +4,17 @@ use std::io::{self, Read};
 use std::net::SocketAddr;
 use std::fmt::{self, Debug};
 
-use hyper::uri::RequestUri::{AbsoluteUri, AbsolutePath};
-use hyper::net::NetworkStream;
-use hyper::http::h1::HttpReader;
-use hyper::version::HttpVersion;
+use hyper::Uri;
+//use hyper::net::NetworkStream; TODO
+//use hyper::http::h1::HttpReader; TODO
+use hyper::HttpVersion;
 
 use typemap::TypeMap;
 use plugin::Extensible;
 use method::Method;
 
-pub use hyper::server::request::Request as HttpRequest;
-use hyper::buffer;
+pub use hyper::server::Request as HttpRequest;
+//use hyper::buffer; TODO
 
 #[cfg(test)]
 use std::net::ToSocketAddrs;

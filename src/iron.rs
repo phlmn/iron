@@ -4,9 +4,9 @@
 use std::net::{ToSocketAddrs, SocketAddr};
 use std::time::Duration;
 
-pub use hyper::server::Listening;
+//pub use hyper::server::Listening; TODO
 use hyper::server::Server;
-use hyper::net::{Fresh, SslServer, HttpListener, HttpsListener, NetworkListener};
+//use hyper::net::{Fresh, SslServer, HttpListener, HttpsListener, NetworkListener}; TODO
 
 use request::HttpRequest;
 use response::HttpResponse;

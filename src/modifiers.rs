@@ -52,7 +52,7 @@ use std::path::{Path, PathBuf};
 
 use modifier::Modifier;
 
-use hyper::mime::{Mime, SubLevel, TopLevel};
+//use hyper::mime::{Mime, SubLevel, TopLevel}; TODO
 
 use {status, headers, Request, Response, Set, Url};
 
