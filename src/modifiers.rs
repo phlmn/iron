@@ -52,9 +52,9 @@ use std::path::{Path, PathBuf};
 
 use modifier::Modifier;
 
-use hyper::mime::{Mime, SubLevel, TopLevel};
+use mime::{self, Mime};
 
-use {status, headers, Request, Response, Set, Url};
+use {Status, headers, Request, Response, Set, Url};
 
 use mime_guess::guess_mime_type_opt;
 use response::{WriteBody, BodyReader};
@@ -63,7 +63,7 @@ use response::{WriteBody, BodyReader};
 impl Modifier<Response> for Mime {
     #[inline]
     fn modify(self, res: &mut Response) {
-        res.headers.set(headers::ContentType(self))
+        res.headers.insert(headers::CONTENT_TYPE, self.to_string().parse().unwrap());
     }
 }
 
@@ -91,7 +91,7 @@ impl Modifier<Response> for String {
 impl Modifier<Response> for Vec<u8> {
     #[inline]
     fn modify(self, res: &mut Response) {
-        res.headers.set(headers::ContentLength(self.len() as u64));
+        res.headers.insert(headers::CONTENT_LENGTH, self.len().to_string().parse().unwrap());
         res.body = Some(Box::new(self));
     }
 }
@@ -114,7 +114,7 @@ impl Modifier<Response> for File {
     fn modify(self, res: &mut Response) {
         // Set the content type based on the file extension if a path is available.
         if let Ok(metadata) = self.metadata() {
-            res.headers.set(headers::ContentLength(metadata.len()));
+            res.headers.insert(headers::CONTENT_LENGTH, metadata.len().to_string().parse().unwrap());
         }
 
         res.body = Some(Box::new(self));
@@ -149,7 +149,7 @@ impl Modifier<Response> for PathBuf {
     }
 }
 
-impl Modifier<Response> for status::Status {
+impl Modifier<Response> for Status {
     fn modify(self, res: &mut Response) {
         res.status = Some(self);
     }
@@ -157,19 +157,17 @@ impl Modifier<Response> for status::Status {
 
 /// A modifier for changing headers on requests and responses.
 #[derive(Clone)]
-pub struct Header<H: headers::Header + headers::HeaderFormat>(pub H);
+pub struct Header(pub headers::HeaderName, pub headers::HeaderValue);
 
-impl<H> Modifier<Response> for Header<H>
-where H: headers::Header + headers::HeaderFormat {
+impl Modifier<Response> for Header {
     fn modify(self, res: &mut Response) {
-        res.headers.set(self.0);
+        res.headers.insert(self.0, self.1);
     }
 }
 
-impl<'a, 'b, H> Modifier<Request<'a, 'b>> for Header<H>
-where H: headers::Header + headers::HeaderFormat {
+impl Modifier<Request> for Header {
     fn modify(self, res: &mut Request) {
-        res.headers.set(self.0);
+        res.headers.insert(self.0, self.1);
     }
 }
 
@@ -179,7 +177,7 @@ pub struct Redirect(pub Url);
 impl Modifier<Response> for Redirect {
     fn modify(self, res: &mut Response) {
         let Redirect(url) = self;
-        res.headers.set(headers::Location(url.to_string()));
+        res.headers.insert(headers::LOCATION, url.to_string().parse().unwrap());
     }
 }
 
@@ -189,13 +187,13 @@ pub struct RedirectRaw(pub String);
 impl Modifier<Response> for RedirectRaw {
     fn modify(self, res: &mut Response) {
         let RedirectRaw(path) = self;
-        res.headers.set(headers::Location(path));
+        res.headers.insert(headers::LOCATION, path.parse().unwrap());
     }
 }
 
 fn mime_for_path(path: &Path) -> Mime {
     guess_mime_type_opt(path)
-        .unwrap_or_else(|| Mime(TopLevel::Text, SubLevel::Plain, vec![]))
+        .unwrap_or_else(|| mime::TEXT_PLAIN)
 }
 
 

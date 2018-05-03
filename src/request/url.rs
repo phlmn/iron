@@ -3,6 +3,7 @@
 use url::{self, Host};
 use std::str::FromStr;
 use std::fmt;
+use http;
 
 /// HTTP/HTTPS URL type for Iron.
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -29,8 +30,6 @@ impl Url {
 
     /// Create a `Url` from a `rust-url` `Url`.
     pub fn from_generic_url(raw_url: url::Url) -> Result<Url, String> {
-        // Create an Iron URL by verifying the `rust-url` `Url` is a special
-        // scheme that Iron supports.
         if raw_url.cannot_be_a_base() {
             Err(format!("Not a special scheme: `{}`", raw_url.scheme()))
         } else if raw_url.port_or_known_default().is_none() {

@@ -63,11 +63,13 @@
 #[macro_use] extern crate log;
 
 // Third party packages
+extern crate http;
 extern crate hyper;
 extern crate typemap as tmap;
 extern crate plugin;
 extern crate url as url_ext;
 extern crate num_cpus;
+extern crate mime;
 extern crate mime_guess;
 
 // Request + Response
@@ -85,8 +87,7 @@ pub use iron::*;
 pub use typemap::TypeMap;
 
 // Headers
-pub use hyper::header as headers;
-pub use hyper::header::Headers;
+pub use http::header as headers;
 
 // Expose `Pluggable` as `Plugin` so users can do `use iron::Plugin`.
 pub use plugin::Pluggable as Plugin;
@@ -97,9 +98,6 @@ pub use modifier::Set;
 // Errors
 pub use error::Error;
 pub use error::IronError;
-
-// Mime types
-pub use hyper::mime;
 
 /// Iron's error type and associated utilities.
 pub mod error;
@@ -141,17 +139,10 @@ pub mod url {
 }
 
 /// Status Codes
-pub mod status {
-    pub use hyper::status::StatusCode as Status;
-    pub use hyper::status::StatusCode::*;
-    pub use hyper::status::StatusClass;
-}
+pub use hyper::StatusCode as Status;
 
 /// HTTP Methods
-pub mod method {
-    pub use hyper::method::Method;
-    pub use hyper::method::Method::*;
-}
+pub use hyper::Method as Method;
 
 // Publicized to show the documentation
 pub mod middleware;

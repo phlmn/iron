@@ -1,20 +1,23 @@
 //! Exposes the `Iron` type, the main entrance point of the
 //! `Iron` library.
 
-use std::net::{ToSocketAddrs, SocketAddr};
+use std::error::Error;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 
-pub use hyper::server::Listening;
+use hyper;
+use hyper::rt::Future;
 use hyper::server::Server;
-use hyper::net::{Fresh, SslServer, HttpListener, HttpsListener, NetworkListener};
+use hyper::service::{NewService, Service};
 
 use request::HttpRequest;
 use response::HttpResponse;
 
+use hyper::service::service_fn;
+
 use error::HttpResult;
 
-use {Request, Handler};
-use status;
+use {Handler, Request, Response, Status};
 
 /// The primary entrance point to `Iron`, a `struct` to instantiate a new server.
 ///
@@ -52,7 +55,7 @@ pub struct Timeouts {
     /// Controls the timeout for writes on existing connections.
     ///
     /// The default is `Some(Duration::from_secs(1))`
-    pub write: Option<Duration>
+    pub write: Option<Duration>,
 }
 
 impl Default for Timeouts {
@@ -60,7 +63,7 @@ impl Default for Timeouts {
         Timeouts {
             keep_alive: Some(Duration::from_secs(5)),
             read: Some(Duration::from_secs(30)),
-            write: Some(Duration::from_secs(1))
+            write: Some(Duration::from_secs(1)),
         }
     }
 }
@@ -116,84 +119,126 @@ impl<H: Handler> Iron<H> {
     ///
     /// The thread returns a guard that will automatically join with the parent
     /// once it is dropped, blocking until this happens.
-    pub fn http<A>(self, addr: A) -> HttpResult<Listening>
-        where A: ToSocketAddrs
-    {
-        HttpListener::new(addr).and_then(|l| self.listen(l, Protocol::http()))
+    pub fn http(self, addr: SocketAddr) {
+        // HttpListener::new(addr).and_then(|l| self.listen(l, Protocol::http()))
+
+        // Then bind and serve...
+        let server = Server::bind(&addr).serve(|| {
+            service_fn(|req: HttpRequest<hyper::Body>| {
+
+                // Set some defaults in case request handler panics.
+                // This should not be necessary anymore once stdlib's catch_panic becomes stable.
+                // *http_res.status_mut() = Status::INTERNAL_SERVER_ERROR;
+
+                // Create `Request` wrapper.
+                match Request::from_http(req, addr, &Protocol(_Protocol::Http)) {
+                    Ok(mut req) => {
+                        // Dispatch the request, write the response back to http_res
+                        let res = self.handler
+                            .handle(&mut req)
+                            .unwrap_or_else(|e| {
+                                error!("Error handling:\n{:?}\nError was: {:?}", req, e.error);
+                                e.response
+                            });
+
+                        let mut http_res = HttpResponse::<hyper::Body>::new(hyper::Body::from(""));
+                            // .write_back(http_res);
+                        Ok(http_res)
+                    }
+                    Err(e) => {
+                        error!("Error creating request:\n    {}", e);
+                        bad_request()
+                    }
+                }
+            })
+        });
+
+        hyper::rt::spawn(server.map_err(|e| {
+            eprintln!("server error: {}", e);
+        }));
     }
 
-    /// Kick off the server process using the HTTPS protocol.
-    ///
-    /// Call this once to begin listening for requests on the server.
-    /// This consumes the Iron instance, but does the listening on
-    /// another task, so is not blocking.
-    ///
-    /// The thread returns a guard that will automatically join with the parent
-    /// once it is dropped, blocking until this happens.
-    pub fn https<A, S>(self, addr: A, ssl: S) -> HttpResult<Listening>
-        where A: ToSocketAddrs,
-              S: 'static + SslServer + Send + Clone
-    {
-        HttpsListener::new(addr, ssl).and_then(|l| self.listen(l, Protocol::http()))
-    }
+    // /// Kick off the server process using the HTTPS protocol.
+    // ///
+    // /// Call this once to begin listening for requests on the server.
+    // /// This consumes the Iron instance, but does the listening on
+    // /// another task, so is not blocking.
+    // ///
+    // /// The thread returns a guard that will automatically join with the parent
+    // /// once it is dropped, blocking until this happens.
+    // pub fn https<A, S>(self, addr: A, ssl: S) -> HttpResult<Listening>
+    //     where A: ToSocketAddrs,
+    //           S: 'static + SslServer + Send + Clone
+    // {
+    //     HttpsListener::new(addr, ssl).and_then(|l| self.listen(l, Protocol::http()))
+    // }
 
-    /// Kick off a server process on an arbitrary `Listener`.
-    ///
-    /// Most use cases may call `http` and `https` methods instead of this.
-    pub fn listen<L>(self, mut listener: L, protocol: Protocol) -> HttpResult<Listening>
-        where L: 'static + NetworkListener + Send
-    {
-        let handler = RawHandler {
-            handler: self.handler,
-            addr: try!(listener.local_addr()),
-            protocol: protocol,
-        };
+    // /// Kick off a server process on an arbitrary `Listener`.
+    // ///
+    // /// Most use cases may call `http` and `https` methods instead of this.
+    // pub fn listen<L>(self, mut listener: L, protocol: Protocol) -> HttpResult<Listening>
+    //     where L: 'static + NetworkListener + Send
+    // {
+    //     let handler = RawHandler {
+    //         handler: self.handler,
+    //         addr: try!(listener.local_addr()),
+    //         protocol: protocol,
+    //     };
 
-        let mut server = Server::new(listener);
-        server.keep_alive(self.timeouts.keep_alive);
-        server.set_read_timeout(self.timeouts.read);
-        server.set_write_timeout(self.timeouts.write);
-        server.handle_threads(handler, self.threads)
-    }
+    //     let mut server = Server::new(listener);
+    //     server.keep_alive(self.timeouts.keep_alive);
+    //     server.set_read_timeout(self.timeouts.read);
+    //     server.set_write_timeout(self.timeouts.write);
+    //     server.handle_threads(handler, self.threads)
+    // }
 }
 
-struct RawHandler<H> {
-    handler: H,
-    addr: SocketAddr,
-    protocol: Protocol,
+// struct ServiceCreator<H> {
+//     handler: H,
+//     addr: SocketAddr,
+// }
+
+// impl<H: Handler> NewService for ServiceCreator<H> {
+//     // boilerplate hooking up hyper's server types
+//     type ReqBody = hyper::Body;
+//     type ResBody = hyper::Body;
+//     type Error = Box<Error + Send + Sync>;
+//     type Service = RawHandler<H>;
+//     type Future = Future<Item = Self::Service, Error = Self::InitError>;
+//     type InitError = Box<Error + Send + Sync>;
+
+//     fn new_service(&self) -> Self::Future {
+//         RawHandler {
+//             handler: self.handler,
+//             addr: self.addr,
+//             protocol: Protocol(_Protocol::Http),
+//         }
+//     }
+// }
+
+// struct RawHandler<H> {
+//     handler: H,
+//     addr: SocketAddr,
+//     protocol: Protocol,
+// }
+
+// impl<H: Handler> Service for RawHandler<H> {
+//     // boilerplate hooking up hyper's server types
+//     type ReqBody = hyper::Body;
+//     type ResBody = hyper::Body;
+//     type Error = Box<Error>;
+//     // The future representing the eventual Response your call will
+//     // resolve to. This can change to whatever Future you need.
+//     type Future = Future<Item = HttpResponse<Self::ResBody>, Error = Self::Error>;
+
+//     fn call(&mut self, http_req: HttpRequest<Self::ReqBody>) -> Self::Future {
+
+//     }
+// }
+
+fn bad_request() -> HttpResult<HttpResponse<hyper::Body>> {
+    let mut response = HttpResponse::new(hyper::Body::empty());
+    *response.status_mut() = Status::BAD_REQUEST;
+
+    Ok(response)
 }
-
-impl<H: Handler> ::hyper::server::Handler for RawHandler<H> {
-    fn handle(&self, http_req: HttpRequest, mut http_res: HttpResponse<Fresh>) {
-        // Set some defaults in case request handler panics.
-        // This should not be necessary anymore once stdlib's catch_panic becomes stable.
-        *http_res.status_mut() = status::InternalServerError;
-
-        // Create `Request` wrapper.
-        match Request::from_http(http_req, self.addr, &self.protocol) {
-            Ok(mut req) => {
-                // Dispatch the request, write the response back to http_res
-                self.handler.handle(&mut req).unwrap_or_else(|e| {
-                    error!("Error handling:\n{:?}\nError was: {:?}", req, e.error);
-                    e.response
-                }).write_back(http_res)
-            },
-            Err(e) => {
-                error!("Error creating request:\n    {}", e);
-                bad_request(http_res)
-            }
-        }
-    }
-}
-
-fn bad_request(mut http_res: HttpResponse<Fresh>) {
-    *http_res.status_mut() = status::BadRequest;
-
-    // Consume and flush the response.
-    // We would like this to work, but can't do anything if it doesn't.
-    if let Ok(res) = http_res.start()
-    {
-        let _ = res.end();
-    }
-}
-
